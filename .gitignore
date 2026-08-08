@@ -1,0 +1,21 @@
+# Environment variables (NEVER commit these)
+.env
+.env.local
+.env.production
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Docker volumes (local data)
+mongo_data/
+redis_data/
+
+# OS files
+.DS_Store
+Thumbs.db
