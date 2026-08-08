@@ -7,11 +7,11 @@
     "shared"
   ],
   "scripts": {
-    "start": "docker-compose up",
-    "start:build": "docker-compose up --build",
-    "stop": "docker-compose down",
-    "stop:volumes": "docker-compose down -v",
-    "logs": "docker-compose logs -f",
+    "start": "docker compose up",
+    "start:build": "docker compose up --build",
+    "stop": "docker compose down",
+    "stop:volumes": "docker compose down -v",
+    "logs": "docker compose logs -f",
     "seed:admin": "node scripts/seed-admin.js"
   },
   "devDependencies": {

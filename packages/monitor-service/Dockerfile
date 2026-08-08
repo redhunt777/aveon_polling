@@ -11,12 +11,12 @@ WORKDIR /app
 COPY shared ./shared
 
 # Copy service package and install
-COPY packages/notification-service/package*.json ./packages/notification-service/
-WORKDIR /app/packages/notification-service
+COPY packages/monitor-service/package*.json ./packages/monitor-service/
+WORKDIR /app/packages/monitor-service
 RUN npm install --production
 
 # Copy source
-COPY packages/notification-service/src ./src
+COPY packages/monitor-service/src ./src
 
-EXPOSE 3004
+EXPOSE 3005
 CMD ["node", "src/index.js"]

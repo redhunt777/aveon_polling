@@ -132,13 +132,8 @@ const login = async (req, res, next) => {
 // ────────────────────────────────────────────────────────
 const refreshToken = async (req, res, next) => {
   try {
-    const { refreshToken: rt } = req.body;
+    const { refreshToken: rt, userId } = req.body;
     if (!rt) throw new BadRequestError('Refresh token required');
-
-    // Decode expired JWT to get userId
-    const { token: rawToken } = req.body;
-    // We receive the expired access token too so we can find the user
-    const { userId } = req.body;
     if (!userId) throw new BadRequestError('userId required alongside refreshToken');
 
     const redis = getRedis();
