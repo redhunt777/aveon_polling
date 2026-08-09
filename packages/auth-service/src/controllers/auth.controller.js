@@ -44,15 +44,26 @@ const sendInvite = async (req, res, next) => {
       createdBy: req.user.sub,
     });
 
-    await sendInviteEmail({ toEmail: email, toName: name, token });
+    // Try email — but don't fail the whole invite if SMTP is not configured
+    let emailSent = false;
+    try {
+      await sendInviteEmail({ toEmail: email, toName: name, token });
+      emailSent = true;
+    } catch (emailErr) {
+      console.warn('[Auth] Email send failed (SMTP may not be configured):', emailErr.message);
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const registrationLink = `${frontendUrl}/register?token=${token}`;
 
     res.status(201).json({
       success: true,
-      message: `Invite sent to ${email}`,
-      data: { inviteId: invite._id, expiresAt },
+      message: emailSent ? `Invite email sent to ${email}` : `Invite created (email not sent — copy the link below)`,
+      data: { inviteId: invite._id, expiresAt, token, registrationLink, emailSent },
     });
   } catch (err) { next(err); }
 };
+
 
 // ────────────────────────────────────────────────────────
 // GET /auth/invites  (admin only)
@@ -234,4 +245,32 @@ const deactivateUser = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { sendInvite, listInvites, register, login, refreshToken, logout, getMe, listUsers, updateRole, deactivateUser };
+// ────────────────────────────────────────────────────────
+// PATCH /auth/users/:id/activate  (admin only)
+// ────────────────────────────────────────────────────────
+const reactivateUser = async (req, res, next) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { isActive: true },
+      { new: true, select: '-passwordHash -__v' }
+    );
+    if (!user) throw new NotFoundError('User not found');
+    res.json({ success: true, message: 'User reactivated', data: user });
+  } catch (err) { next(err); }
+};
+
+// ────────────────────────────────────────────────────────
+// DELETE /auth/invites/:id  (admin only)
+// ────────────────────────────────────────────────────────
+const cancelInvite = async (req, res, next) => {
+  try {
+    const invite = await Invite.findById(req.params.id);
+    if (!invite) throw new NotFoundError('Invite not found');
+    if (invite.used) throw new BadRequestError('Cannot cancel an invite that has already been used');
+    await invite.deleteOne();
+    res.json({ success: true, message: 'Invite cancelled' });
+  } catch (err) { next(err); }
+};
+
+module.exports = { sendInvite, listInvites, register, login, refreshToken, logout, getMe, listUsers, updateRole, deactivateUser, reactivateUser, cancelInvite };

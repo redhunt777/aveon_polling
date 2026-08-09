@@ -33,8 +33,10 @@ export const authApi = {
     me: () => api.get('/auth/me'),
     invite: (data) => api.post('/auth/invite', data),
     listInvites: () => api.get('/auth/invites'),
+    cancelInvite: (id) => api.delete(`/auth/invites/${id}`),
     listUsers: () => api.get('/auth/users'),
     updateRole: (id, role) => api.patch(`/auth/users/${id}/role`, { role }),
+    activateUser: (id) => api.patch(`/auth/users/${id}/activate`),
     deactivateUser: (id) => api.delete(`/auth/users/${id}`),
 };
 

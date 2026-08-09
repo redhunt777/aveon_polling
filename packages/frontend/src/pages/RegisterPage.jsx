@@ -9,6 +9,7 @@ export default function RegisterPage() {
     const [form, setForm] = useState({ token: '', password: '', confirmPassword: '' });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [fieldError, setFieldError] = useState(''); // 'token' | 'password' | ''
 
     useEffect(() => {
         const t = searchParams.get('token');
@@ -20,16 +21,35 @@ export default function RegisterPage() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (form.password !== form.confirmPassword) {
-            setError('Passwords do not match');
+            setError('Passwords do not match. Please re-enter your password.');
+            setFieldError('password');
             return;
         }
-        setError(''); setLoading(true);
+        if (form.password.length < 8) {
+            setError('Password must be at least 8 characters.');
+            setFieldError('password');
+            return;
+        }
+        setError(''); setFieldError(''); setLoading(true);
         try {
             await authApi.register(form);
             toast('Account created! Please sign in.', 'success');
             navigate('/login');
         } catch (err) {
-            setError(err.response?.data?.message || 'Registration failed.');
+            const msg = err.response?.data?.message || '';
+            if (msg.toLowerCase().includes('token') || msg.toLowerCase().includes('invite')) {
+                setError('Invalid or expired invite token. Ask your admin for a new invite link.');
+                setFieldError('token');
+            } else if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('exists')) {
+                setError('An account with this membership ID or email already exists.');
+                setFieldError('token');
+            } else if (msg.toLowerCase().includes('password')) {
+                setError(msg);
+                setFieldError('password');
+            } else {
+                setError(msg || 'Registration failed. Please check your invite link.');
+                setFieldError('');
+            }
         } finally {
             setLoading(false);
         }
@@ -49,7 +69,12 @@ export default function RegisterPage() {
                     <p className="auth-sub">Create your AVEON Racing Club account</p>
                 </div>
 
-                {error && <div className="alert alert-error">{error}</div>}
+                {error && (
+                    <div className="alert alert-error" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <span style={{ fontSize: '1.1rem' }}>&#x26A0;</span>
+                        <span>{error}</span>
+                    </div>
+                )}
                 {!form.token && (
                     <div className="alert alert-info">
                         You need an invite link from an admin to register.
@@ -66,6 +91,7 @@ export default function RegisterPage() {
                             onChange={handleChange}
                             placeholder="Paste your invite token"
                             required
+                            style={fieldError === 'token' ? { borderColor: 'var(--danger)' } : {}}
                         />
                     </div>
 
@@ -80,6 +106,7 @@ export default function RegisterPage() {
                             placeholder="Min 8 characters"
                             minLength={8}
                             required
+                            style={fieldError === 'password' ? { borderColor: 'var(--danger)' } : {}}
                         />
                     </div>
 
@@ -93,6 +120,7 @@ export default function RegisterPage() {
                             onChange={handleChange}
                             placeholder="Repeat your password"
                             required
+                            style={fieldError === 'password' ? { borderColor: 'var(--danger)' } : {}}
                         />
                     </div>
 

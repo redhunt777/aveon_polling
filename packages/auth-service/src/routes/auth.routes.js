@@ -53,8 +53,10 @@ router.get('/me', ctrl.getMe);
 router.use(adminOnly);
 router.post('/invite', validate(inviteSchema), ctrl.sendInvite);
 router.get('/invites', ctrl.listInvites);
+router.delete('/invites/:id', ctrl.cancelInvite);
 router.get('/users', ctrl.listUsers);
 router.patch('/users/:id/role', ctrl.updateRole);
+router.patch('/users/:id/activate', ctrl.reactivateUser);
 router.delete('/users/:id', ctrl.deactivateUser);
 
 module.exports = router;

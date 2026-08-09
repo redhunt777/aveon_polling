@@ -4,17 +4,163 @@ Microservices backend for club elections (President, GenSec, etc.) built with **
 
 ---
 
-## Architecture
+## 📐 High-Level Design (HLD)
 
+This section describes the system design, microservices architecture, component schemas, and communication flows of the AVEON Polling System.
+
+### System Architecture
+
+The project is structured as a decoupled microservices architecture utilizing Node.js/Express for services, Redis for fast pub/sub operations, cached stores, and double-vote checks, and MongoDB as the persistent data container. 
+
+```mermaid
+graph TD
+    %% Clients
+    Client[React Frontend :5173]
+
+    %% Gateway
+    Gateway[API Gateway :3000]
+
+    %% Microservices
+    Auth[Auth Service :3001]
+    Poll[Poll Service :3002]
+    Vote[Vote Service :3003]
+    Notif[Notification Service :3004]
+    Monitor[Monitor Service :3005]
+
+    %% Databases
+    DB_Auth[(MongoDB: auth_db)]
+    DB_Poll[(MongoDB: poll_db)]
+    DB_Vote[(MongoDB: vote_db)]
+    Cache[(Redis: 6379)]
+
+    %% Connections
+    Client -.->|HTTP / SSE| Gateway
+    Gateway -->|Forward| Auth
+    Gateway -->|Forward| Poll
+    Gateway -->|Forward| Vote
+    Gateway -->|Forward| Monitor
+
+    %% Service DBs
+    Auth --> DB_Auth
+    Poll --> DB_Poll
+    Vote --> DB_Vote
+
+    %% PubSub / Cache
+    Auth -.->|Publish events/logs| Cache
+    Poll -.->|Publish events/logs| Cache
+    Vote -.->|Get/Set cached states & logs| Cache
+    Gateway -.->|Publish logs| Cache
+    Monitor -.->|Subscribe logs| Cache
+    Notif -.->|Subscribe events| Cache
+
+    %% SMTP
+    Notif -->|SMTP| Gmail[Gmail SMTP Service]
 ```
-Client
-  │
-  └──► API Gateway :3000
-         ├──► Auth Service    :3001  (MongoDB: auth_db)
-         ├──► Poll Service    :3002  (MongoDB: poll_db)
-         └──► Vote Service    :3003  (MongoDB: vote_db)
 
-Redis ──► Notification Service :3004  (pub/sub events → Gmail emails)
+### Component Breakdown
+
+1. **API Gateway (`packages/gateway`)**:
+   - Single endpoint exposing entry to clients (`http://localhost:3000`).
+   - Handles route proxying, rate-limiting, and CORS configurations.
+   - Logs incoming requests asynchronously into Redis channel `service:logs`.
+
+2. **Auth Service (`packages/auth-service`)**:
+   - Handles creation, distribution, and validation of member invitation links.
+   - Generates stateless JWT access tokens and Redis-backed stateful refresh sessions.
+   - Restores user validation checks.
+
+3. **Poll Service (`packages/poll-service`)**:
+   - Stores general structures for polls, metadata, available voter positions, and candidates.
+   - Deploys multi-layered Redis caching for speedier listing endpoints.
+
+4. **Vote Service (`packages/vote-service`)**:
+   - Handles the entire voting engine.
+   - Guarantees complete anonymity by splitting ballot entries from voter identity tables.
+   - Updates live voting tallies in Redis directly.
+
+5. **Notification Service (`packages/notification-service`)**:
+   - A message-driven engine listening for `poll:events` published by services.
+   - Automates the distribution of email updates (e.g. invites, poll open, poll results ready) using SMTP.
+
+6. **Monitor Service (`packages/monitor-service`)**:
+   - Collects logs pushed to Redis from active services.
+   - Caches standard logs (up to 2,000 entries) and maintains a heartbeat interface for all microservices.
+   - Services Server-Sent-Events (SSE) logs connection to the frontend monitor console.
+
+### Database Design & Schema Models
+
+Different MongoDB instances isolate service databases to maintain domain boundary encapsulation:
+
+- **`auth_db`**:
+  - `users`: `{ name, email, passwordHash, membershipId, role, isActive }`
+  - `invites`: `{ email, name, membershipId, role, token, used, expiresAt }` (invite tokens are UUIDv4 base)
+- **`poll_db`**:
+  - `polls`: `{ title, description, status ('draft','active','closed'), positions: [{ name, candidates: [{ name, membershipId, bio, photoUrl }] }] }`
+- **`vote_db`**:
+  - `voter_records`: `{ pollId, voterId, votedPositions: [String] }` (stores who voted to block duplicate entries)
+  - `votes`: `{ pollId, positionName, candidateId, castedAt }` (anonymized vote registry containing no references to `voterId`)
+
+---
+
+### Core Data Flows
+
+#### 1. Anonymous Voting Mechanism
+To ensure absolute voter privacy, the Voting transaction creates two detached records and updates memory tallies:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Member as Club Member
+    participant Client as Frontend Client
+    participant GW as API Gateway
+    participant VoteSvc as Vote Service
+    participant DB as MongoDB (vote_db)
+    participant Redis as Redis Cache
+
+    Member->>Client: Select candidates and vote
+    Client->>GW: POST /api/votes { pollId, votes }
+    GW->>VoteSvc: Proxy request
+    VoteSvc->>Redis: Check voted:<pollId>:<voterId>:<pos> (Guard)
+    alt Already Voted in this position
+        Redis-->>VoteSvc: Key exists
+        VoteSvc-->>GW: Error: 400 Bad Request
+        GW-->>Client: Error message
+    else Not Voted (First Ballot)
+        Redis-->>VoteSvc: Key missing
+        rect rgba(0, 150, 255, 0.1)
+            Note over VoteSvc,DB: Transactional Write
+            VoteSvc->>DB: Add VoterRecord (Voter + Poll Info)
+            VoteSvc->>DB: Add anonymized Vote document (No Voter link)
+        end
+        VoteSvc->>Redis: Set Key voted:<pollId>:<voterId>:<pos> (TTL 30 days)
+        VoteSvc->>Redis: HINCRBY votecount:<pollId>:<pos>:<candidateId> 1 (Live Tally)
+        VoteSvc-->>GW: Success: Vote recorded
+        GW-->>Client: Success dashboard reload
+    end
+```
+
+#### 2. Log Stream & Telemetry Flow
+Request events are automatically published to Redis and surfaced dynamically in the administration console using SSE streams:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Club Administrator
+    participant UI as Admin Dashboard Console
+    participant MonSvc as Monitor Service
+    participant Redis as Redis Channel
+    participant ActiveSvc as Active Service (Auth/Poll/Vote)
+
+    Admin->>UI: View Monitor Console
+    UI->>MonSvc: HTTP GET /api/monitor/logs/stream (SSE connection)
+    MonSvc-->>UI: Confirm connection (Stream open)
+    
+    Note over ActiveSvc: Request Finished
+    ActiveSvc->>Redis: PUBLISH 'service:logs' { service, method, path, responseTime, ... }
+    Redis-->>MonSvc: Broadcast message
+    MonSvc->>Redis: LPUSH 'monitor:logs' (Append to cache list log)
+    MonSvc->>UI: Stream SSE event: "data: { logMsg }"
+    UI->>Admin: Show live telemetry feed card
 ```
 
 ---

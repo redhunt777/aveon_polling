@@ -20,7 +20,19 @@ export default function LoginPage() {
             toast(`Welcome back, ${user.name}!`, 'success');
             navigate('/dashboard');
         } catch (err) {
-            setError(err.response?.data?.message || 'Login failed. Check your credentials.');
+            const msg = err.response?.data?.message || '';
+            // Map backend messages to friendly UI errors
+            if (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('credentials')) {
+                setError('Incorrect email or password. Please try again.');
+            } else if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('no user')) {
+                setError('No account found with this email address.');
+            } else if (msg.toLowerCase().includes('inactive') || msg.toLowerCase().includes('deactivated') || msg.toLowerCase().includes('disabled')) {
+                setError('Your account has been deactivated. Please contact an admin.');
+            } else if (msg.toLowerCase().includes('expired')) {
+                setError('Your session has expired. Please sign in again.');
+            } else {
+                setError(msg || 'Login failed. Please check your credentials and try again.');
+            }
         } finally {
             setLoading(false);
         }
@@ -41,7 +53,12 @@ export default function LoginPage() {
                     <p className="auth-sub">Sign in to your club account</p>
                 </div>
 
-                {error && <div className="alert alert-error">{error}</div>}
+                {error && (
+                    <div className="alert alert-error" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <span style={{ fontSize: '1.1rem' }}>&#x26A0;</span>
+                        <span>{error}</span>
+                    </div>
+                )}
 
                 <form className="auth-form" onSubmit={handleSubmit}>
                     <div className="form-group">
@@ -54,6 +71,7 @@ export default function LoginPage() {
                             onChange={handleChange}
                             placeholder="your@email.com"
                             required
+                            style={error ? { borderColor: 'var(--danger)' } : {}}
                         />
                     </div>
 
@@ -67,6 +85,7 @@ export default function LoginPage() {
                             onChange={handleChange}
                             placeholder="••••••••"
                             required
+                            style={error ? { borderColor: 'var(--danger)' } : {}}
                         />
                     </div>
 

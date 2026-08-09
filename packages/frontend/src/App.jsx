@@ -10,6 +10,7 @@ import DashboardPage from './pages/DashboardPage';
 import VotePage from './pages/VotePage';
 import ResultsPage from './pages/ResultsPage';
 import AdminPage from './pages/AdminPage';
+import PollEditPage from './pages/PollEditPage';
 import MonitorPage from './pages/MonitorPage';
 
 function AuthLayout({ children }) {
@@ -63,6 +64,11 @@ export default function App() {
                     <Route path="/admin" element={
                         <RequireAdmin>
                             <AppLayout><AdminPage /></AppLayout>
+                        </RequireAdmin>
+                    } />
+                    <Route path="/admin/poll/:id" element={
+                        <RequireAdmin>
+                            <AppLayout><PollEditPage /></AppLayout>
                         </RequireAdmin>
                     } />
                     <Route path="/monitor" element={
