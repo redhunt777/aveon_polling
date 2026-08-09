@@ -21,3 +21,4 @@ redis_data/
 Thumbs.db
 
 package-lock.json
+dist
