@@ -1,5 +1,6 @@
 const Poll = require('../models/Poll');
 const { getRedis } = require('../config/redis');
+const { publishEvent } = require('../config/kafka');
 const { NotFoundError, BadRequestError, ForbiddenError } = require('@aveon/shared');
 
 const ACTIVE_POLL_TTL = 60;    // 60 seconds cache for active poll detail
@@ -100,14 +101,12 @@ const updateStatus = async (req, res, next) => {
 
     await invalidatePollCache(poll._id.toString());
 
-    // Publish event for notification service
-    const redis = getRedis();
-    await redis.publish('poll:events', JSON.stringify({
-      type: status === 'active' ? 'POLL_OPENED' : 'POLL_CLOSED',
-      pollId: poll._id,
+    // Publish event to Kafka — notification-service will fan out to all channels
+    await publishEvent(status === 'active' ? 'POLL_OPENED' : 'POLL_CLOSED', {
+      pollId: poll._id.toString(),
       title: poll.title,
-      timestamp: new Date().toISOString(),
-    }));
+      description: poll.description,
+    });
 
     res.json({ success: true, data: poll });
   } catch (err) { next(err); }

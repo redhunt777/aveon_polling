@@ -4,7 +4,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const connectDB = require('./config/db');
-const { getRedis } = require('./config/redis');
+const { connectRedis, getRedis } = require('./config/redis');
+const { connectKafkaProducer } = require('./config/kafka');
 const pollRoutes = require('./routes/poll.routes');
 const { errorHandler, createLogPublisher } = require('@aveon/shared');
 
@@ -22,6 +23,9 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'poll-servic
 app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 app.use(errorHandler);
 
-connectDB().then(() => {
+connectDB().then(() => connectRedis()).then(() => connectKafkaProducer()).then(() => {
   app.listen(PORT, () => console.log(`[Poll Service] Running on port ${PORT}`));
+}).catch((err) => {
+  console.error('[Poll Service] Startup Error:', err);
+  process.exit(1);
 });

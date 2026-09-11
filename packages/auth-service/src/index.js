@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const connectDB = require('./config/db');
 const { connectRedis, getRedis } = require('./config/redis');
+const { connectKafkaProducer } = require('./config/kafka');
 const authRoutes = require('./routes/auth.routes');
 const { errorHandler, createLogPublisher } = require('@aveon/shared');
 
@@ -27,10 +28,11 @@ app.use('/auth', authRoutes);
 app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 app.use(errorHandler);
 
-// Initialize DB, Redis, and Start Server
-Promise.all([connectDB(), connectRedis()]).then(() => {
+// Initialize DB, Redis, Kafka Producer and Start Server
+Promise.all([connectDB(), connectRedis(), connectKafkaProducer()]).then(() => {
   app.listen(PORT, () => console.log(`[Auth Service] Running on port ${PORT}`));
 }).catch((err) => {
   console.error('[Auth Service] Startup Error:', err);
   process.exit(1);
 });
+

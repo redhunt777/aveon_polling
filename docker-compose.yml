@@ -55,6 +55,54 @@ services:
       timeout: 3s
       retries: 5
 
+  # ── Message Broker (Kafka KRaft — no Zookeeper) ────────────
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: aveon_kafka
+    restart: unless-stopped
+    ports:
+      - "29092:29092"   # host-accessible (for local dev / tools)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      CLUSTER_ID: aveon-kafka-cluster-001
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - aveon_net
+    healthcheck:
+      test: [ "CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: aveon_kafka_ui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: aveon-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - aveon_net
+
   # ── Microservices ──────────────────────────────────────────
   auth-service:
     build:
@@ -70,13 +118,14 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRY: 15m
       REFRESH_TOKEN_EXPIRY: 604800
-      GMAIL_USER: ${GMAIL_USER}
-      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      KAFKA_BROKER: kafka:9092
     depends_on:
       mongo:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     networks:
       - aveon_net
@@ -93,10 +142,13 @@ services:
       MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASSWORD:-rootpassword}@mongo:27017/poll_db?authSource=admin
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
+      KAFKA_BROKER: kafka:9092
     depends_on:
       mongo:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     networks:
       - aveon_net
@@ -132,14 +184,16 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NOTIF_PORT: 3004
-      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASSWORD:-rootpassword}@mongo:27017/auth_db?authSource=admin
-      REDIS_URL: redis://redis:6379
       GMAIL_USER: ${GMAIL_USER}
       GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      KAFKA_BROKER: kafka:9092
+      NOTIFY_ALL_EMAIL: ${NOTIFY_ALL_EMAIL:-}
+      # Email rate limiting (adjust if needed)
+      EMAIL_RATE_PER_SECOND: ${EMAIL_RATE_PER_SECOND:-1}
+      EMAIL_RATE_PER_MINUTE: ${EMAIL_RATE_PER_MINUTE:-10}
     depends_on:
-      redis:
+      kafka:
         condition: service_healthy
     networks:
       - aveon_net
@@ -196,6 +250,7 @@ services:
 volumes:
   mongo_data:
   redis_data:
+  kafka_data:
 
 networks:
   aveon_net:
