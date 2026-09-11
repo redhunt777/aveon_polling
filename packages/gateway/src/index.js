@@ -19,8 +19,17 @@ const MONITOR_SERVICE_URL = process.env.MONITOR_SERVICE_URL || 'http://localhost
 // Redis client for log publishing
 const redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
-app.use(helmet());
-app.use(cors());
+const allowedOrigins = process.env.FRONTEND_URL 
+  ? [process.env.FRONTEND_URL, 'http://localhost:5173']
+  : '*';
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+app.options('*', cors());
 app.use(morgan('dev'));
 app.use(rateLimiter);
 app.use(createLogPublisher('gateway', redisClient));
